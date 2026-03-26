@@ -1,0 +1,15 @@
+{
+  "name": "p2p-classroom",
+  "version": "1.0.0",
+  "description": "P2P Online Classroom — WebRTC + Socket.io",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "setup": "cp frontend/.env.local.example frontend/.env.local && cp backend/.env.example backend/.env && echo 'Env files copied! Edit them if needed.'"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
+}
