@@ -38,6 +38,11 @@ export function useClassroom({ roomId, name, role }) {
   const [mutedByTeacher, setMutedByTeacher] = useState(false);
   const [error, setError] = useState(null);
 
+  // Whiteboard: store remote draw events so Whiteboard component can consume them
+  // We use a ref-based callback pattern so we never need to re-register the socket listener
+  const onRemoteDrawRef = useRef(null);   // set by Whiteboard via registerDrawHandler
+  const onRemoteClearRef = useRef(null);
+
   const isTeacher = role === "teacher";
 
   // ── Get local camera/mic ──────────────────────────────────────────────────
@@ -200,6 +205,19 @@ export function useClassroom({ roomId, name, role }) {
         // Screen track replaced with camera track — handled by peer connection
       });
 
+      // ── Whiteboard ────────────────────────────────────────────────────────
+      // Listeners are registered here on the live socket.
+      // The actual canvas drawing is delegated to Whiteboard via ref callbacks.
+      socket.on("whiteboard-draw", ({ drawData }) => {
+        if (!mounted) return;
+        onRemoteDrawRef.current?.(drawData);
+      });
+
+      socket.on("whiteboard-clear", () => {
+        if (!mounted) return;
+        onRemoteClearRef.current?.();
+      });
+
       // Connect the socket
       if (!socket.connected) socket.connect();
     }
@@ -327,6 +345,16 @@ export function useClassroom({ roomId, name, role }) {
     socketRef.current?.emit("whiteboard-clear", { roomId });
   }, [roomId]);
 
+  /**
+   * Whiteboard component calls this once on mount to register its canvas draw functions.
+   * We store them in refs so the socket listener (registered once) always has the
+   * latest version without needing to re-subscribe.
+   */
+  const registerDrawHandlers = useCallback((onDraw, onClear) => {
+    onRemoteDrawRef.current = onDraw;
+    onRemoteClearRef.current = onClear;
+  }, []);
+
   const mySocketId = socketRef.current?.id;
 
   return {
@@ -359,5 +387,6 @@ export function useClassroom({ roomId, name, role }) {
     muteStudent,
     emitDraw,
     emitClear,
+    registerDrawHandlers,
   };
 }

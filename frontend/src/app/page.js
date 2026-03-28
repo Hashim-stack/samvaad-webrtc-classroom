@@ -73,7 +73,7 @@ export default function Home() {
             fontWeight: "700",
             letterSpacing: "-0.02em",
             color: "var(--text)",
-          }}>Samvaad</h1>
+          }}>ClassRoom</h1>
           <p style={{ color: "var(--text-dim)", marginTop: "6px", fontSize: "13px" }}>
             Peer-to-peer video learning — no servers in the middle.
           </p>

@@ -53,6 +53,7 @@ export default function RoomPage() {
     muteStudent,
     emitDraw,
     emitClear,
+    registerDrawHandlers,
   } = classroom;
 
   // Sync handRaised state with raisedHands list
@@ -104,7 +105,7 @@ export default function RoomPage() {
             fontSize: "14px",
           }}>🎓</div>
           <span style={{ fontFamily: "var(--font-mono)", fontWeight: "700", fontSize: "14px" }}>
-            Samvaad
+            ClassRoom
           </span>
         </div>
 
@@ -121,7 +122,7 @@ export default function RoomPage() {
 
         {/* Role badge */}
         <span className={`badge ${isTeacher ? "badge-teacher" : "badge-student"}`}>
-          {isTeacher ? "Teacher" : "Student"}
+          {isTeacher ? "🎓 Teacher" : "📚 Student"}
         </span>
 
         {/* Connection status */}
@@ -220,10 +221,9 @@ export default function RoomPage() {
             />
           ) : (
             <Whiteboard
-              roomId={roomId}
               emitDraw={emitDraw}
               emitClear={emitClear}
-              socket={socket}
+              registerDrawHandlers={registerDrawHandlers}
             />
           )}
         </div>

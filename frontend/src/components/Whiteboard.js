@@ -1,18 +1,67 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
-import { getSocket } from "@/lib/socket";
+import { useRef, useEffect, useState } from "react";
 
-export default function Whiteboard({ roomId, emitDraw, emitClear, socket }) {
+/**
+ * Whiteboard component
+ *
+ * Receives:
+ *  - emitDraw(drawData)   — sends a stroke to the server (from useClassroom)
+ *  - emitClear()          — sends a clear event to the server
+ *  - registerDrawHandlers(onDraw, onClear) — registers canvas callbacks
+ *    with the parent hook so the socket listener (already alive) can call
+ *    them directly. This avoids the "socket is null at render time" problem.
+ */
+export default function Whiteboard({ emitDraw, emitClear, registerDrawHandlers }) {
   const canvasRef = useRef(null);
   const isDrawing = useRef(false);
   const lastPos = useRef(null);
-  const [tool, setTool] = useState("pen"); // pen | eraser
+
+  const [tool, setTool] = useState("pen");
   const [color, setColor] = useState("#60a5fa");
   const [lineWidth, setLineWidth] = useState(3);
 
-  // ── Draw locally ─────────────────────────────────────────────────────────
-  function getPos(e, canvas) {
+  // ── Register canvas draw handlers with the hook on mount ─────────────────
+  // The hook's socket listener will call these directly whenever a remote
+  // whiteboard-draw or whiteboard-clear event arrives.
+  useEffect(() => {
+    if (!registerDrawHandlers) return;
+
+    registerDrawHandlers(
+      // onRemoteDraw
+      (drawData) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        drawSegment(ctx, drawData.from, drawData.to, drawData.color, drawData.lineWidth, drawData.isEraser);
+      },
+      // onRemoteClear
+      () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+      }
+    );
+
+    return () => {
+      registerDrawHandlers(null, null);
+    };
+  }, [registerDrawHandlers]);
+
+  // ── Drawing helpers ───────────────────────────────────────────────────────
+  function drawSegment(ctx, from, to, strokeColor, width, isEraser) {
+    ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = isEraser ? width * 4 : width;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+
+  function getCanvasPos(e, canvas) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
@@ -24,133 +73,94 @@ export default function Whiteboard({ roomId, emitDraw, emitClear, socket }) {
     };
   }
 
-  function drawLine(ctx, from, to, drawColor, width, isEraser) {
-    ctx.globalCompositeOperation = isEraser ? "destination-out" : "source-over";
-    ctx.strokeStyle = drawColor;
-    ctx.lineWidth = isEraser ? width * 4 : width;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
-  }
-
-  function onMouseDown(e) {
+  function onPointerDown(e) {
     e.preventDefault();
     isDrawing.current = true;
-    const canvas = canvasRef.current;
-    lastPos.current = getPos(e, canvas);
+    lastPos.current = getCanvasPos(e, canvasRef.current);
   }
 
-  function onMouseMove(e) {
+  function onPointerMove(e) {
     e.preventDefault();
-    if (!isDrawing.current) return;
+    if (!isDrawing.current || !lastPos.current) return;
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-    const pos = getPos(e, canvas);
+    const pos = getCanvasPos(e, canvas);
     const from = lastPos.current;
+    const isEraser = tool === "eraser";
 
-    drawLine(ctx, from, pos, color, lineWidth, tool === "eraser");
-
-    const drawData = { from, to: pos, color, lineWidth, isEraser: tool === "eraser" };
-    emitDraw(drawData);
+    drawSegment(ctx, from, pos, color, lineWidth, isEraser);
+    emitDraw?.({ from, to: pos, color, lineWidth, isEraser });
     lastPos.current = pos;
   }
 
-  function onMouseUp(e) {
+  function onPointerUp() {
     isDrawing.current = false;
     lastPos.current = null;
   }
 
   function clearCanvas() {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    emitClear();
+    canvasRef.current?.getContext("2d").clearRect(0, 0, 1200, 900);
+    emitClear?.();
   }
 
-  // ── Listen for remote draw events ─────────────────────────────────────────
-  useEffect(() => {
-    const s = socket || getSocket();
-
-    function onRemoteDraw({ drawData }) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      drawLine(ctx, drawData.from, drawData.to, drawData.color, drawData.lineWidth, drawData.isEraser);
-    }
-
-    function onRemoteClear() {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-
-    s.on("whiteboard-draw", onRemoteDraw);
-    s.on("whiteboard-clear", onRemoteClear);
-
-    return () => {
-      s.off("whiteboard-draw", onRemoteDraw);
-      s.off("whiteboard-clear", onRemoteClear);
-    };
-  }, [socket]);
-
-  const colors = ["#60a5fa", "#34d399", "#f87171", "#fbbf24", "#a78bfa", "#fb923c", "#ffffff", "#1e293b"];
+  const colors = [
+    "#60a5fa","#34d399","#f87171","#fbbf24",
+    "#a78bfa","#fb923c","#f472b6","#ffffff","#1e293b",
+  ];
 
   return (
     <div style={{
       display: "flex", flexDirection: "column", height: "100%",
-      background: "var(--surface)", borderLeft: "1px solid var(--border)",
+      background: "var(--surface)",
     }}>
       {/* Toolbar */}
       <div style={{
-        padding: "10px 14px",
+        padding: "8px 12px",
         borderBottom: "1px solid var(--border)",
-        display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
+        display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap",
+        background: "var(--surface2)",
       }}>
-        <span style={{ fontSize: "13px", fontWeight: "600", marginRight: "4px" }}>✏️ Board</span>
+        <span style={{ fontSize: "13px", fontWeight: "700" }}>✏️</span>
 
         <button
           className={`btn ${tool === "pen" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setTool("pen")}
-          style={{ padding: "5px 10px", fontSize: "12px" }}
-        >
-          Pen
-        </button>
+          style={{ padding: "4px 10px", fontSize: "11px" }}
+        >Pen</button>
+
         <button
           className={`btn ${tool === "eraser" ? "btn-warning" : "btn-ghost"}`}
           onClick={() => setTool("eraser")}
-          style={{ padding: "5px 10px", fontSize: "12px" }}
-        >
-          Eraser
-        </button>
+          style={{ padding: "4px 10px", fontSize: "11px" }}
+        >Eraser</button>
 
-        {/* Color swatches */}
-        <div style={{ display: "flex", gap: "4px", alignItems: "center", marginLeft: "4px" }}>
-          {colors.map((c) => (
-            <button
-              key={c}
-              onClick={() => { setColor(c); setTool("pen"); }}
-              style={{
-                width: "20px", height: "20px", borderRadius: "50%",
-                background: c, border: `2px solid ${color === c ? "#fff" : "transparent"}`,
-                cursor: "pointer", padding: 0,
-                boxShadow: color === c ? "0 0 0 1px var(--accent)" : "none",
-              }}
-            />
-          ))}
-        </div>
+        <div style={{ width: "1px", height: "18px", background: "var(--border)" }} />
 
-        {/* Line width */}
+        {colors.map((c) => (
+          <button
+            key={c}
+            onClick={() => { setColor(c); setTool("pen"); }}
+            style={{
+              width: "18px", height: "18px", borderRadius: "50%",
+              background: c, padding: 0, cursor: "pointer",
+              border: `2px solid ${color === c && tool === "pen" ? "var(--text)" : "rgba(255,255,255,0.15)"}`,
+              transform: color === c && tool === "pen" ? "scale(1.25)" : "scale(1)",
+              transition: "transform 0.1s",
+              boxShadow: color === c && tool === "pen" ? "0 0 0 1px var(--accent)" : "none",
+            }}
+          />
+        ))}
+
+        <div style={{ width: "1px", height: "18px", background: "var(--border)" }} />
+
         <select
           value={lineWidth}
           onChange={e => setLineWidth(Number(e.target.value))}
           style={{
-            background: "var(--surface2)", color: "var(--text)",
+            background: "var(--surface)", color: "var(--text)",
             border: "1px solid var(--border)", borderRadius: "6px",
-            padding: "4px 6px", fontSize: "12px",
+            padding: "3px 6px", fontSize: "11px",
           }}
         >
           <option value={2}>Thin</option>
@@ -162,32 +172,29 @@ export default function Whiteboard({ roomId, emitDraw, emitClear, socket }) {
         <button
           className="btn btn-danger"
           onClick={clearCanvas}
-          style={{ padding: "5px 10px", fontSize: "12px", marginLeft: "auto" }}
-        >
-          Clear
-        </button>
+          style={{ padding: "4px 10px", fontSize: "11px", marginLeft: "auto" }}
+        >Clear All</button>
       </div>
 
       {/* Canvas */}
-      <div style={{ flex: 1, padding: "12px", overflow: "hidden" }}>
+      <div style={{ flex: 1, overflow: "hidden", padding: "10px" }}>
         <canvas
           ref={canvasRef}
           width={1200}
-          height={800}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseUp}
-          onTouchStart={onMouseDown}
-          onTouchMove={onMouseMove}
-          onTouchEnd={onMouseUp}
+          height={900}
+          onMouseDown={onPointerDown}
+          onMouseMove={onPointerMove}
+          onMouseUp={onPointerUp}
+          onMouseLeave={onPointerUp}
+          onTouchStart={onPointerDown}
+          onTouchMove={onPointerMove}
+          onTouchEnd={onPointerUp}
           style={{
-            width: "100%", height: "100%",
-            background: "#0f1520",
+            width: "100%", height: "100%", display: "block",
+            background: "#0d1117",
             borderRadius: "8px",
-            cursor: tool === "eraser" ? "cell" : "crosshair",
             border: "1px solid var(--border)",
-            display: "block",
+            cursor: tool === "eraser" ? "cell" : "crosshair",
             touchAction: "none",
           }}
         />

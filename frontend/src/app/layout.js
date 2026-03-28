@@ -2,8 +2,8 @@ import "./globals.css";
 import { ThemeProvider } from "@/lib/ThemeContext";
 
 export const metadata = {
- title: "Samvaad",
-description: "Connect, learn, and collaborate instantly with real-time video classrooms.",
+  title: "ClassRoom — P2P Online Classroom",
+  description: "Real-time peer-to-peer video classroom",
 };
 
 export default function RootLayout({ children }) {
