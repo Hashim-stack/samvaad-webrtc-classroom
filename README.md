@@ -3,7 +3,7 @@
 A fully peer-to-peer video classroom built with WebRTC, Next.js, and Socket.io.  
 **Media never touches the server.** Only signaling (SDP + ICE) goes through the backend.
 
----
+---------
 
 ## 🏗 Architecture Overview
 
